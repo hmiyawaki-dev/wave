@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>波の振動を理解するアプリ</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; margin: 0; padding: 20px; color: #333; }
+        .container { max-width: 1000px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        h1 { text-align: center; color: #2c3e50; font-size: 1.5rem; margin-bottom: 20px; }
+        canvas { background: #fff; border: 1px solid #ddd; border-radius: 4px; display: block; margin: 0 auto 15px; box-shadow: inset 0 1px 3px rgba(0,0,0,0.05); }
+        .controls { display: flex; flex-wrap: wrap; gap: 15px; padding: 15px; background: #eef2f5; border-radius: 6px; margin-bottom: 20px; }
+        .control-group { display: flex; flex-direction: column; gap: 5px; }
+        .control-group label { font-weight: bold; font-size: 0.9rem; color: #34495e; }
+        .btn { padding: 8px 12px; background: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer; transition: background 0.3s; font-size: 0.9rem; }
+        .btn:hover { background: #2980b9; }
+        .btn:disabled { background: #95a5a6; cursor: not-allowed; }
+        .btn-play { background: #2ecc71; }
+        .btn-play:hover { background: #27ae60; }
+        .btn-pause { background: #e74c3c; }
+        .btn-pause:hover { background: #c0392b; }
+        .btn-reset { background: #e67e22; }
+        .btn-reset:hover { background: #d35400; }
+        .radio-group { display: flex; gap: 10px; align-items: center; height: 100%; flex-wrap: wrap; }
+        .legend { display: flex; gap: 15px; font-size: 0.85rem; justify-content: center; margin-bottom: 10px; flex-wrap: wrap; }
+        .legend-item { display: flex; align-items: center; gap: 5px; }
+        .color-box { width: 15px; height: 15px; border-radius: 3px; border: 1px solid #ccc; }
+        .info-text { font-size: 0.85rem; color: #666; text-align: center; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>波の振動を理解するアプリ</h1>
+    
+    <div class="legend">
+        <div class="legend-item"><div class="color-box" style="background: red;"></div>同位相（選択した人と同じ動き）</div>
+        <div class="legend-item"><div class="color-box" style="background: blue;"></div>逆位相（選択した人と逆の動き）</div>
+        <div class="legend-item"><div class="color-box" style="background: rgba(255, 0, 0, 0.2);"></div>密（縦波時）</div>
+        <div class="legend-item"><div class="color-box" style="background: rgba(0, 0, 255, 0.2);"></div>疎（縦波時）</div>
+    </div>
+    
+    <p class="info-text">※キャンバス内の人物をクリックすると、その人を基準（媒質）として選択できます。</p>
+
+    <!-- メインキャンバス (x-yグラフとウェーブ) -->
+    <canvas id="mainCanvas" width="900" height="250"></canvas>
+    
+    <!-- サブキャンバス (y-tグラフ) -->
+    <canvas id="ytCanvas" width="900" height="150"></canvas>
+
+    <div class="controls">
+        <div class="control-group">
+            <label>波の種類 (x-y)</label>
+            <div class="radio-group">
+                <label><input type="radio" name="waveType" value="transverse" checked> 横波（上下）</label>
+                <label><input type="radio" name="waveType" value="longitudinal"> 縦波（左右）</label>
+            </div>
+        </div>
+        
+        <div class="control-group">
+            <label>波の形態</label>
+            <div class="radio-group">
+                <label><input type="radio" name="waveForm" value="continuous" checked> 連続波</label>
+                <label><input type="radio" name="waveForm" value="pulse"> パルス波</label>
+            </div>
+        </div>
+        
+        <div class="control-group">
+            <label>再生コントロール</label>
+            <div class="radio-group">
+                <button id="btnPlayPause" class="btn btn-pause">一時停止</button>
+                <button id="btnReset" class="btn btn-reset">最初から</button>
+                <button id="btnStepBack" class="btn">コマ戻し (-1/4T)</button>
+                <button id="btnStepForward" class="btn">コマ送り (+1/4T)</button>
+            </div>
+        </div>
+        
+        <div class="control-group">
+            <label>振動速度</label>
+            <div class="radio-group">
+                <label><input type="radio" name="speed" value="0.5"> 鈍速</label>
+                <label><input type="radio" name="speed" value="1.0" checked> 標準 (1周期/秒)</label>
+                <label><input type="radio" name="speed" value="2.0"> 高速</label>
+            </div>
+        </div>
+        
+        <div class="control-group">
+            <label>表示設定</label>
+            <div class="radio-group">
+                <label><input type="checkbox" id="chkShowXYGraph" checked> x-yグラフ(線)</label>
+                <label><input type="checkbox" id="chkShowYTGraph" checked> y-tグラフ</label>
+                <label><input type="checkbox" id="chkShowPhase" checked> 同位相・逆位相</label>
+                <label><input type="checkbox" id="chkShowDensity" checked> 疎密(縦波)</label>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const mainCanvas = document.getElementById('mainCanvas');
+    const ctx = mainCanvas.getContext('2d');
+    const ytCanvas = document.getElementById('ytCanvas');
+    const ytCtx = ytCanvas.getContext('2d');
+
+    // 物理パラメータ
+    const N = 20; // 人数
+    const lambda = 8; // 波長（8人分で1波長）
+    const dx = 40; // 人と人の基本間隔
+    const baseX = 70; // 描画開始X座標
+    const baseY = 150; // 人の足元の基本Y座標 (横波時)
+
+    // 状態変数
+    let time = 0; // 経過時間（周期Tを単位とする）
+    let isPlaying = true;
+    let selectedPerson = 4; // デフォルトで5番目の人を選択
+
+    // UI要素の取得
+    const btnPlayPause = document.getElementById('btnPlayPause');
+    const btnReset = document.getElementById('btnReset');
+    const btnStepBack = document.getElementById('btnStepBack');
+    const btnStepForward = document.getElementById('btnStepForward');
+    const chkShowXYGraph = document.getElementById('chkShowXYGraph');
+    const chkShowYTGraph = document.getElementById('chkShowYTGraph');
+    const chkShowPhase = document.getElementById('chkShowPhase');
+    const chkShowDensity = document.getElementById('chkShowDensity');
+    const waveFormRadios = document.getElementsByName('waveForm');
+
+    // ラジオボタン変更イベント（波の形態変更時に時間をリセット）
+    waveFormRadios.forEach(radio => {
+        radio.addEventListener('change', () => {
+            time = 0;
+            draw();
+        });
+    });
+
+    // コントロールのイベント設定
+    btnPlayPause.addEventListener('click', () => {
+        isPlaying = !isPlaying;
+        updatePlayPauseButton();
+    });
+
+    btnReset.addEventListener('click', () => {
+        time = 0;
+        draw();
+    });
+
+    btnStepForward.addEventListener('click', () => {
+        isPlaying = false;
+        time += 0.25; // 1/4周期
+        updatePlayPauseButton();
+        draw();
+    });
+
+    btnStepBack.addEventListener('click', () => {
+        isPlaying = false;
+        time = Math.max(0, time - 0.25); // -1/4周期 (0未満にはならない)
+        updatePlayPauseButton();
+        draw();
+    });
+    
+    chkShowYTGraph.addEventListener('change', () => {
+        ytCanvas.style.display = chkShowYTGraph.checked ? 'block' : 'none';
+        draw();
+    });
+
+    // キャンバスクリックで人物選択
+    mainCanvas.addEventListener('mousedown', (e) => {
+        const rect = mainCanvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        
+        let closestIndex = Math.round((mouseX - baseX) / dx);
+        if (closestIndex >= 0 && closestIndex < N) {
+            selectedPerson = closestIndex;
+            draw();
+        }
+    });
+
+    function updatePlayPauseButton() {
+        if (isPlaying) {
+            btnPlayPause.textContent = "一時停止";
+            btnPlayPause.className = "btn btn-pause";
+        } else {
+            btnPlayPause.textContent = "再生";
+            btnPlayPause.className = "btn btn-play";
+        }
+    }
+
+    function getWaveType() {
+        return document.querySelector('input[name="waveType"]:checked').value;
+    }
+
+    function getWaveForm() {
+        return document.querySelector('input[name="waveForm"]:checked').value;
+    }
+
+    function getSpeed() {
+        return parseFloat(document.querySelector('input[name="speed"]:checked').value);
+    }
+
+    // 変位の計算関数 (④スタート時は振動なしから始まるように修正)
+    function getDisplacement(i, t) {
+        // 位相 = t - x/λ (波が位置 i に届くのは t = i / lambda の瞬間)
+        const phase = t - i / lambda;
+        
+        if (phase < 0) {
+            // 波がまだ届いていない（スタート状態0）
+            return 0;
+        }
+
+        if (getWaveForm() === 'pulse') {
+            // パルス波の場合、1波長分（phase: 0〜1）のみ振動
+            if (phase <= 1) {
+                return Math.sin(phase * 2 * Math.PI);
+            }
+            return 0;
+        } else {
+            // 連続波：波が届いた後はずっと振動
+            return Math.sin(phase * 2 * Math.PI);
+        }
+    }
+
+    // メイン描画ループ
+    let lastTimestamp = 0;
+    function animationLoop(timestamp) {
+        if (!lastTimestamp) lastTimestamp = timestamp;
+        const deltaTime = timestamp - lastTimestamp;
+        lastTimestamp = timestamp;
+
+        if (isPlaying) {
+            time += (deltaTime / 1000) * getSpeed();
+        }
+
+        draw();
+        requestAnimationFrame(animationLoop);
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, mainCanvas.width, mainCanvas.height);
+        const waveType = getWaveType();
+
+        // --- 背景の描画（縦波時の疎密） ---
+        if (waveType === 'longitudinal' && chkShowDensity.checked) {
+            for (let i = 0; i < N - 1; i++) {
+                let disp1 = getDisplacement(i, time);
+                let disp2 = getDisplacement(i + 1, time);
+                let x1 = baseX + i * dx + disp1 * 25;
+                let x2 = baseX + (i + 1) * dx + disp2 * 25;
+                let distance = x2 - x1;
+                
+                let diff = dx - distance; 
+                if (Math.abs(diff) > 2) {
+                    ctx.fillStyle = diff > 0 
+                        ? `rgba(255, 0, 0, ${Math.min(diff / 20, 0.4)})`  // 密 (赤)
+                        : `rgba(0, 0, 255, ${Math.min(-diff / 20, 0.4)})`; // 疎 (青)
+                    ctx.fillRect(x1, 20, distance, mainCanvas.height - 40);
+                }
+            }
+        }
+
+        // --- 人物の描画 ---
+        let handPositions = [];
+
+        for (let i = 0; i < N; i++) {
+            let disp = getDisplacement(i, time); // -1.0 to 1.0
+            
+            let x = baseX + i * dx;
+            let y = baseY;
+            
+            let drawX = x;
+            let drawY = y;
+            
+            if (waveType === 'transverse') {
+                drawY = y - disp * 40;
+            } else {
+                drawX = x + disp * 25;
+            }
+
+            // 同位相・逆位相の判定とハイライト色 (①ON/OFF設定適用)
+            let color = "#333";
+            let lineWidth = 2;
+            
+            if (i === selectedPerson) {
+                color = "#27ae60"; // 選択者は常に緑
+                lineWidth = 3;
+            } else if (chkShowPhase.checked) { // 同位相・逆位相表示がONの時のみ適用
+                let diff = (i - selectedPerson) % lambda;
+                if (diff < 0) diff += lambda;
+                
+                if (diff === 0) {
+                    color = "red"; // 同位相
+                    lineWidth = 3;
+                } else if (Math.abs(diff - lambda/2) < 0.1) {
+                    color = "blue"; // 逆位相
+                    lineWidth = 3;
+                }
+            }
+
+            // 描画：棒人間
+            ctx.beginPath();
+            ctx.strokeStyle = color;
+            ctx.lineWidth = lineWidth;
+            
+            if (waveType === 'transverse') {
+                let headY = drawY - 40;
+                let bodyBottom = drawY - 10;
+                let shoulderY = headY + 15;
+                
+                // 頭
+                ctx.arc(drawX, headY, 8, 0, Math.PI * 2);
+                // 胴体
+                ctx.moveTo(drawX, headY + 8);
+                ctx.lineTo(drawX, bodyBottom);
+                // 足
+                ctx.moveTo(drawX, bodyBottom);
+                ctx.lineTo(drawX - 10, y);
+                ctx.moveTo(drawX, bodyBottom);
+                ctx.lineTo(drawX + 10, y);
+                
+                // 腕 (③直立＝真横に広げる「大の字」に変更)
+                let handY = shoulderY;
+                let handX = drawX;
+                if (disp > 0.5) {
+                    // 状態1: 両手を上に挙げる
+                    ctx.moveTo(drawX, shoulderY);
+                    ctx.lineTo(drawX - 15, shoulderY - 20);
+                    ctx.moveTo(drawX, shoulderY);
+                    ctx.lineTo(drawX + 15, shoulderY - 20);
+                    handY = shoulderY - 20;
+                } else if (disp < -0.5) {
+                    // 状態3: 手を下にしてしゃがむ
+                    ctx.moveTo(drawX, shoulderY);
+                    ctx.lineTo(drawX - 12, shoulderY + 20);
+                    ctx.moveTo(drawX, shoulderY);
+                    ctx.lineTo(drawX + 12, shoulderY + 20);
+                    handY = shoulderY + 20;
+                } else {
+                    // 状態0, 2: 両手を真横に広げる（大の字）
+                    ctx.moveTo(drawX, shoulderY);
+                    ctx.lineTo(drawX - 20, shoulderY);
+                    ctx.moveTo(drawX, shoulderY);
+                    ctx.lineTo(drawX + 20, shoulderY);
+                    handY = shoulderY;
+                }
+                
+                handPositions.push({x: drawX, y: handY});
+                ctx.stroke();
+                
+            } else {
+                // 縦波のポーズ
+                let headY = y - 40;
+                let bodyBottom = y - 10;
+                let shoulderY = headY + 15;
+                
+                // 頭
+                ctx.arc(drawX, headY, 8, 0, Math.PI * 2);
+                // 胴体
+                ctx.moveTo(drawX, headY + 8);
+                ctx.lineTo(drawX, bodyBottom);
+                // 足
+                ctx.moveTo(drawX, bodyBottom);
+                ctx.lineTo(drawX - 10, y);
+                ctx.moveTo(drawX, bodyBottom);
+                ctx.lineTo(drawX + 10, y);
+                
+                // 腕
+                ctx.moveTo(drawX, shoulderY);
+                ctx.lineTo(drawX + 25, shoulderY);
+                
+                handPositions.push({x: drawX + 25, y: shoulderY});
+                ctx.stroke();
+            }
+
+            // 番号の描画
+            ctx.fillStyle = color;
+            ctx.font = "14px Arial";
+            ctx.textAlign = "center";
+            ctx.fillText((i + 1).toString(), x, y + 25);
+            if (i === selectedPerson) {
+                ctx.fillText("▼", x, y - 90);
+            }
+        }
+
+        // --- x-yグラフの描画 ---
+        if (chkShowXYGraph.checked && handPositions.length > 0) {
+            ctx.beginPath();
+            ctx.strokeStyle = "rgba(46, 204, 113, 0.7)";
+            ctx.lineWidth = 4;
+            ctx.moveTo(handPositions[0].x, handPositions[0].y);
+            for (let i = 1; i < handPositions.length; i++) {
+                ctx.lineTo(handPositions[i].x, handPositions[i].y);
+            }
+            ctx.stroke();
+        }
+
+        // --- ②y-tグラフの描画（ONの時のみ） ---
+        if (chkShowYTGraph.checked) {
+            drawYTGraph();
+        }
+    }
+
+    function drawYTGraph() {
+        ytCtx.clearRect(0, 0, ytCanvas.width, ytCanvas.height);
+        
+        const graphBaseY = ytCanvas.height / 2;
+        const graphStartX = 60;
+        const graphWidth = ytCanvas.width - 80;
+        
+        ytCtx.strokeStyle = "#ddd";
+        ytCtx.lineWidth = 1;
+        ytCtx.beginPath();
+        ytCtx.moveTo(graphStartX, graphBaseY);
+        ytCtx.lineTo(graphStartX + graphWidth, graphBaseY);
+        ytCtx.moveTo(graphStartX, graphBaseY - 40);
+        ytCtx.lineTo(graphStartX + graphWidth, graphBaseY - 40);
+        ytCtx.moveTo(graphStartX, graphBaseY + 40);
+        ytCtx.lineTo(graphStartX + graphWidth, graphBaseY + 40);
+        ytCtx.stroke();
+
+        ytCtx.fillStyle = "#333";
+        ytCtx.font = "12px Arial";
+        ytCtx.textAlign = "right";
+        ytCtx.fillText("変位 y", graphStartX - 10, graphBaseY - 40);
+        ytCtx.fillText("0", graphStartX - 10, graphBaseY + 4);
+        ytCtx.fillText("時間 t", graphStartX + graphWidth, graphBaseY + 15);
+        
+        ytCtx.textAlign = "left";
+        ytCtx.fillText(`[${selectedPerson + 1}番の人の y-t グラフ]`, 10, 20);
+
+        ytCtx.beginPath();
+        ytCtx.strokeStyle = "#e67e22";
+        ytCtx.lineWidth = 3;
+        
+        const timeRange = 3; // 3周期分を表示
+        
+        for (let px = 0; px <= graphWidth; px++) {
+            let historyTime = time - timeRange * (1 - px / graphWidth);
+            
+            // 描画範囲外(未発生の過去時間)は描画しない
+            if (historyTime < 0) continue;
+            
+            let disp = getDisplacement(selectedPerson, historyTime);
+            let py = graphBaseY - disp * 40;
+            
+            if (px === 0) {
+                ytCtx.moveTo(graphStartX + px, py);
+            } else {
+                ytCtx.lineTo(graphStartX + px, py);
+            }
+        }
+        ytCtx.stroke();
+    }
+
+    // 初期化とループ開始
+    requestAnimationFrame(animationLoop);
+
+</script>
+</body>
+</html>
